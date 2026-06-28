@@ -10,3 +10,5 @@ Beveiligde avondbuffer: Je houdt altijd minimaal 30% accucapaciteit over om de d
 
 Accubesparing: Tussen de 30% en 70% SoC wordt het maximale ontlaadvermogen in stappen begrensd om de batterij te sparen
 
+Voor het aansturen van mijn Marstek heb ik dit gebruikt
+lilygo: Venus E V3: https://github.com/fonske/MarstekVenus-LilygoRS485/blob/main/lilygo_mt1_v3.yaml
