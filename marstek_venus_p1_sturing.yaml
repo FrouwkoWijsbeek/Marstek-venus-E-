@@ -1,0 +1,112 @@
+alias: "Marstek Venus: Ontladen bij hoog verbruik (Zon + Net + Tariefsturing)"
+description: >-
+  Stuurt naar 0W op P1 bij hoog verbruik. Dwingt accu naar 0W (actieve
+  netstroom) bij tarief onder 19 cent of SoC onder 30%.
+triggers:
+  - trigger: state
+    entity_id: sensor.zonneplan_current_usage
+    id: live_update
+  - trigger: state
+    entity_id: sensor.p1_meter_power
+    id: live_update
+  - trigger: template
+    value_template: >-
+      {% set net = states('sensor.zonneplan_current_usage') | float(0) %} {% set
+      zon = states('sensor.p1_meter_power') | float(0) | abs %} {% set accu =
+      states('number.marstek_m1_forcible_discharge_power') | float(0) | abs %}
+      {{ (net + zon + accu) > 1800 }}
+    for: "00:05:00"
+    id: auto_start_ontladen
+  - trigger: template
+    value_template: >-
+      {% set net = states('sensor.zonneplan_current_usage') | float(0) %} {% set
+      zon = states('sensor.p1_meter_power') | float(0) | abs %} {% set accu =
+      states('number.marstek_m1_forcible_discharge_power') | float(0) | abs %}
+      {{ (net + zon + accu) < 1800 }}
+    for: "00:05:00"
+    id: auto_stopt_laden
+conditions: []
+actions:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% set net = states('sensor.zonneplan_current_usage') | float(0)
+              %} {% set zon = states('sensor.p1_meter_power') | float(0) | abs
+              %} {% set accu =
+              states('number.marstek_m1_forcible_discharge_power') | float(0) |
+              abs %} {{ (net + zon + accu) > 1800 and trigger.id !=
+              'auto_stopt_laden' }}
+        sequence:
+          - action: select.select_option
+            target:
+              entity_id: select.marstek_m1_rs485_control_mode
+            data:
+              option: enable
+          - action: select.select_option
+            target:
+              entity_id: select.marstek_m1_forcible_charge_discharge
+            data:
+              option: discharge
+          - action: number.set_value
+            target:
+              entity_id: number.marstek_m1_forcible_discharge_power
+            data:
+              value: >-
+                {% set net = states('sensor.zonneplan_current_usage') | float(0)
+                %} {% set huidig_ontladen =
+                states('number.marstek_m1_forcible_discharge_power') | float(0)
+                | abs %} {% set soc = states('sensor.marstek_m1_soc') |
+                float(100) %} {% set tarief =
+                states('sensor.zonneplan_current_electricity_tariff') | float(0)
+                %}
+
+                {# Maximaal fysiek vermogen van de Marstek Venus #} {% set
+                max_fysiek = 2400 %} 
+
+                {# Dynamische vermogenslimiet op basis van SoC, de 30% buffer én
+                het tarief #} {% if tarief < 0.19 %}
+                  {% set max_toegestaan = 0 %} {# Goedkope stroom: overschrijf naar 0W ontladen om zelfconsumptie te blokkeren #}
+                {% elif soc <= 30 %}
+                  {% set max_toegestaan = 0 %} {# Lege accu buffer #}
+                {% elif soc > 70 %}
+                  {% set max_toegestaan = max_fysiek %} 
+                {% elif soc < 50 %}
+                  {% set max_toegestaan = max_fysiek / 4 %}
+                {% else %}
+                  {% set max_toegestaan = max_fysiek / 2 %}
+                {% endif %}
+
+                {# Berekening voor 0W op de netmeter #} {% set nieuw_vermogen =
+                huidig_ontladen + net %}
+
+                {# Inperken binnen de limieten #} {% if nieuw_vermogen >
+                max_toegestaan %}
+                  {% set output = max_toegestaan %}
+                {% elif nieuw_vermogen < 0 %}
+                  {% set output = 0 %}
+                {% else %}
+                  {% set output = nieuw_vermogen %}
+                {% endif %}
+
+                {{ (output * -1) | round(0) }}
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'auto_stopt_laden' }}"
+        sequence:
+          - action: select.select_option
+            target:
+              entity_id: select.marstek_m1_forcible_charge_discharge
+            data:
+              option: stop
+          - action: select.select_option
+            target:
+              entity_id: select.marstek_m1_rs485_control_mode
+            data:
+              option: disable
+          - action: number.set_value
+            target:
+              entity_id: number.marstek_m1_forcible_discharge_power
+            data:
+              value: 0
+mode: restart
